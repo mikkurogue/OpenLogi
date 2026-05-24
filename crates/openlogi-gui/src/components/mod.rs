@@ -7,3 +7,4 @@
 pub mod action_popover;
 pub mod device_carousel;
 pub mod dpi_panel;
+pub mod gesture_pad;

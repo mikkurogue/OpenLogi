@@ -15,6 +15,7 @@ use openlogi_core::device::DeviceInventory;
 use crate::components::action_popover::ActionPopoverRow;
 use crate::components::device_carousel::DeviceCarousel;
 use crate::components::dpi_panel::DpiPanel;
+use crate::components::gesture_pad::GesturePad;
 use crate::state::AppState;
 use crate::theme::{BG_DARK, BORDER, FOOTER_H, HEADER_H, TEXT_MUTED, TEXT_PRIMARY};
 
@@ -22,6 +23,7 @@ pub struct AppView {
     carousel: Entity<DeviceCarousel>,
     dpi_panel: Entity<DpiPanel>,
     action_row: Entity<ActionPopoverRow>,
+    gesture_pad: Entity<GesturePad>,
 }
 
 impl AppView {
@@ -32,10 +34,12 @@ impl AppView {
         let carousel = cx.new(|cx| DeviceCarousel::new(inventories, cx));
         let dpi_panel = cx.new(DpiPanel::new);
         let action_row = cx.new(|_| ActionPopoverRow::default_row());
+        let gesture_pad = cx.new(GesturePad::new);
         Self {
             carousel,
             dpi_panel,
             action_row,
+            gesture_pad,
         }
     }
 }
@@ -47,7 +51,7 @@ impl Render for AppView {
             .bg(rgb(BG_DARK))
             .text_color(rgb(TEXT_PRIMARY))
             .child(header(&self.carousel))
-            .child(body(&self.dpi_panel, &self.action_row))
+            .child(body(&self.dpi_panel, &self.action_row, &self.gesture_pad))
             .child(footer(cx))
     }
 }
@@ -70,7 +74,11 @@ fn header(carousel: &Entity<DeviceCarousel>) -> impl IntoElement {
         .child(div().flex_1().min_w_0().child(carousel.clone()))
 }
 
-fn body(dpi_panel: &Entity<DpiPanel>, action_row: &Entity<ActionPopoverRow>) -> impl IntoElement {
+fn body(
+    dpi_panel: &Entity<DpiPanel>,
+    action_row: &Entity<ActionPopoverRow>,
+    gesture_pad: &Entity<GesturePad>,
+) -> impl IntoElement {
     h_flex()
         .flex_1()
         .w_full()
@@ -82,15 +90,16 @@ fn body(dpi_panel: &Entity<DpiPanel>, action_row: &Entity<ActionPopoverRow>) -> 
         .child(
             v_flex()
                 .gap_4()
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(rgb(TEXT_MUTED))
-                        .child("Button bindings"),
-                )
-                .child(action_row.clone()),
+                .child(panel_label("Button bindings"))
+                .child(action_row.clone())
+                .child(panel_label("Gestures"))
+                .child(gesture_pad.clone()),
         )
         .child(dpi_panel.clone())
+}
+
+fn panel_label(text: &'static str) -> impl IntoElement {
+    div().text_sm().text_color(rgb(TEXT_MUTED)).child(text)
 }
 
 fn footer(cx: &Context<AppView>) -> impl IntoElement {
