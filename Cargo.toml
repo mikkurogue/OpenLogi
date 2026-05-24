@@ -4,6 +4,7 @@ members = [
     "crates/optminus-core",
     "crates/optminus-hid",
     "crates/optminus-cli",
+    "crates/optminus-gui",
 ]
 
 [workspace.package]
@@ -28,6 +29,18 @@ thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter"] }
 directories = "5"
+
+# GPUI stack. The longbridge gpui-component README points at Zed's git HEAD
+# because their crates.io publishes (gpui 0.2.x, gpui-component 0.5.x) lag the
+# documented API. We deliberately do NOT pin `gpui` / `gpui_platform` with a
+# `rev` — gpui-component itself references zed without a rev, and cargo treats
+# `{ git = X, rev = Y }` and `{ git = X }` as separate source IDs, so pinning
+# here ends up compiling gpui twice and producing two incompatible `App`
+# types. Reproducibility comes from Cargo.lock pinning the resolved SHA;
+# bump via `cargo update -p gpui` when needed.
+gpui = { git = "https://github.com/zed-industries/zed" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "x11", "wayland"] }
+gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "196b9259b562c26be97c92f88c798bbeefa9cb3d" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

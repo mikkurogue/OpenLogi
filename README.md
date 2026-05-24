@@ -36,9 +36,10 @@ the batteries are.
 
 | Capability | v0.0.1 |
 |---|---|
-| Discover Logi Bolt receivers | ✅ |
+| Discover Logi Bolt receivers (CLI + GUI) | ✅ |
 | List paired devices (slot, codename, kind, online state, wpid) | ✅ |
 | Battery percentage / level / charging status | ✅ (online devices) |
+| GPUI desktop window (static device list) | ✅ |
 | Direct-Bluetooth devices (no receiver) | ❌ |
 | Unifying receivers | ❌ (not yet in `hidpp 0.2`) |
 | SmartShift toggle | 🚧 v0.0.2 |
@@ -62,6 +63,15 @@ Or build and put the binary somewhere on `PATH`:
 cargo build --release
 cp target/release/optminus ~/.local/bin/
 ```
+
+The GUI binary (`optminus-gui`) opens a desktop window with the same device list:
+
+```sh
+cargo run -p optminus-gui --release
+```
+
+GUI builds need Apple's full Xcode toolchain (Xcode 16+ with the optional Metal
+Toolchain component) on macOS. CLI builds need only stable Rust.
 
 ### macOS
 
@@ -95,7 +105,25 @@ crates/
   optminus-core/   serializable types, config, paths — no HID, no async
   optminus-hid/    hidpp + async-hid glue: enumerate(), inventory types
   optminus-cli/    the `optminus` binary
+  optminus-gui/    the `optminus-gui` binary — GPUI + gpui-component
 ```
+
+## Developing on devenv (macOS)
+
+This repo's `devenv.nix` sets up a Nix-based dev shell with sccache, the stable
+Rust toolchain, and the env overrides GPUI needs. The first time you `cd` into
+the repo after pulling a change to `devenv.nix`, **reload direnv** so the new
+env vars (`DEVELOPER_DIR`, `SDKROOT`, the PATH filter that strips Nix's
+`xcbuild` xcrun stub) take effect:
+
+```sh
+direnv reload    # or: exit your shell and `cd` back in
+```
+
+Without that, GPUI's `gpui_macos` build script can't find Apple's `metal`
+shader compiler, and link errors about missing `_write` / `_sysconf` /
+`_waitpid` symbols show up because the Nix `apple-sdk-14.4` stub doesn't
+expose `libSystem` the way Apple's real linker wants.
 
 ## Acknowledgments
 

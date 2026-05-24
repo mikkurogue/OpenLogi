@@ -1,0 +1,31 @@
+[package]
+name = "optminus-gui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "GPUI-based desktop UI for OptMinus."
+
+[[bin]]
+name = "optminus-gui"
+path = "src/main.rs"
+
+[dependencies]
+optminus-core = { path = "../optminus-core" }
+optminus-hid = { path = "../optminus-hid" }
+# GPU-accelerated UI framework and its component library.
+gpui = { workspace = true }
+gpui_platform = { workspace = true }
+gpui-component = { workspace = true }
+# Tokio runs the one-shot HID enumeration before the GPUI app starts.
+tokio = { workspace = true }
+# Single error sink for the binary; libraries use thiserror.
+anyhow = { workspace = true }
+# Structured logging.
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[lints]
+workspace = true
