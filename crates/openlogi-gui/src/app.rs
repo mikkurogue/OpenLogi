@@ -15,7 +15,7 @@ use tracing::info;
 
 use crate::asset::AssetCache;
 use crate::components::device_carousel::DeviceCarousel;
-use crate::components::dpi_panel::DpiPanel;
+use crate::components::dpi_panel::{DpiPanel, DpiTarget};
 use crate::components::gesture_pad::GesturePad;
 use crate::mouse_model::view::MouseModelView;
 use crate::state::AppState;
@@ -51,9 +51,24 @@ impl AppView {
             );
         }
 
+        // Route the DPI slider's HID writes to the first online paired
+        // device that reports a receiver `unique_id`. The carousel
+        // doesn't drive selection yet (v0.0.1 takes whatever's first).
+        let dpi_target = inventories.iter().find_map(|inv| {
+            let receiver_uid = inv.receiver.unique_id.clone()?;
+            let paired = inv.paired.iter().find(|p| p.online)?;
+            Some(DpiTarget {
+                receiver_uid,
+                slot: paired.slot,
+            })
+        });
+        if let Some(t) = dpi_target.as_ref() {
+            info!(slot = t.slot, receiver = %t.receiver_uid, "DPI slider targets device");
+        }
+
         let carousel = cx.new(|cx| DeviceCarousel::new(inventories, cx));
         let mouse_model = cx.new(|cx| MouseModelView::new(asset, cx));
-        let dpi_panel = cx.new(DpiPanel::new);
+        let dpi_panel = cx.new(|cx| DpiPanel::new(dpi_target, cx));
         let gesture_pad = cx.new(GesturePad::new);
         Self {
             carousel,

@@ -19,10 +19,20 @@ use gpui_component::{
     slider::{Slider, SliderEvent, SliderState},
     v_flex,
 };
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::state::AppState;
 use crate::theme::ACCENT_BLUE;
+
+/// Identifies which physical device the slider should write DPI to.
+/// `receiver_uid` is the Bolt receiver's unique id (so we route writes
+/// correctly when more than one receiver is plugged in); `slot` is the
+/// device's pairing slot on that receiver.
+#[derive(Debug, Clone)]
+pub struct DpiTarget {
+    pub receiver_uid: String,
+    pub slot: u8,
+}
 
 /// Slider column width. Matches the right-column layout in `app.rs`.
 const PANEL_W: f32 = 300.;
@@ -33,11 +43,15 @@ const STEP_DPI: f32 = 50.;
 
 pub struct DpiPanel {
     slider_state: Entity<SliderState>,
+    /// The connected device the slider writes to. `None` keeps the UI
+    /// functional in dev (no real device) — `AppState.dpi` still
+    /// updates so other panels can react, but no HID++ write fires.
+    target: Option<DpiTarget>,
     _slider_sub: Subscription,
 }
 
 impl DpiPanel {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(target: Option<DpiTarget>, cx: &mut Context<Self>) -> Self {
         let initial_dpi = dpi_to_f32(
             cx.try_global::<AppState>()
                 .map_or(crate::state::DEFAULT_DPI, |s| s.dpi),
@@ -56,22 +70,70 @@ impl DpiPanel {
 
         let slider_sub = cx.subscribe(
             &slider_state,
-            |_panel, _slider, event: &SliderEvent, cx| {
-                let SliderEvent::Change(value) = event else {
-                    return;
-                };
-                let dpi = clamp_dpi(value.start());
-                debug!(dpi, "slider change → AppState.dpi");
-                cx.update_global::<AppState, _>(|state, _| state.dpi = dpi);
-                cx.notify();
+            |panel, _slider, event: &SliderEvent, cx| match event {
+                // Continuous Change drives the in-process state so the
+                // numeric label tracks the drag. The HID write happens
+                // once on Release to keep us from spamming the device
+                // with intermediate values.
+                SliderEvent::Change(value) => {
+                    let dpi = clamp_dpi(value.start());
+                    debug!(dpi, "slider change → AppState.dpi");
+                    cx.update_global::<AppState, _>(|state, _| state.dpi = dpi);
+                    cx.notify();
+                }
+                SliderEvent::Release(value) => {
+                    let dpi = clamp_dpi(value.start());
+                    write_dpi_in_background(panel.target.clone(), dpi);
+                }
             },
         );
 
         Self {
             slider_state,
+            target,
             _slider_sub: slider_sub,
         }
     }
+}
+
+/// Spawn an OS thread that runs a one-shot tokio runtime, fires the
+/// HID++ DPI write, and exits. We don't reuse GPUI's executor because
+/// `async-hid` carries macOS-specific transport bits that want a tokio
+/// reactor. One thread per slider release is cheap (~100 ms wall time)
+/// and avoids a long-lived background runtime.
+fn write_dpi_in_background(target: Option<DpiTarget>, dpi: u32) {
+    let Some(target) = target else {
+        debug!(dpi, "no target device — UI-only DPI update");
+        return;
+    };
+    std::thread::spawn(move || {
+        let rt = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(rt) => rt,
+            Err(e) => {
+                warn!(error = %e, "tokio runtime init failed; DPI write skipped");
+                return;
+            }
+        };
+        // DPI is bounded by `clamp_dpi` to [200, 6400] so the u16 cast
+        // is lossless.
+        let dpi_u16 = u16::try_from(dpi).unwrap_or(u16::MAX);
+        let result = rt.block_on(openlogi_hid::set_dpi(
+            Some(&target.receiver_uid),
+            target.slot,
+            dpi_u16,
+        ));
+        match result {
+            Ok(()) => debug!(
+                slot = target.slot,
+                dpi = dpi_u16,
+                "DPI written to device"
+            ),
+            Err(e) => warn!(error = ?e, "DPI write failed"),
+        }
+    });
 }
 
 impl Render for DpiPanel {

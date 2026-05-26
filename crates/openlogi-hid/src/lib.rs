@@ -1,9 +1,16 @@
 //! HID++ device discovery and inspection for OpenLogi.
 //!
-//! Wraps the `hidpp` crate over `async-hid` as the transport. The only public
-//! entry point is [`inventory::enumerate`].
+//! Wraps the `hidpp` crate over `async-hid` as the transport. Public
+//! entry points:
+//!
+//! - [`enumerate`] — one-shot inventory of receivers + paired devices.
+//! - [`set_dpi`] — write a new sensor DPI to a connected device.
 
 mod transport;
 
+pub mod adjustable_dpi;
 pub mod inventory;
+pub mod write;
+
 pub use inventory::{InventoryError, enumerate};
+pub use write::{WriteError, set_dpi};
