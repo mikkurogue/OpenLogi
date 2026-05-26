@@ -214,10 +214,92 @@ pub enum Action {
     // ── Custom ───────────────────────────────────────────────────────────────
     /// Replay an arbitrary recorded key chord (P1.3).
     ///
-    /// The `String` value is a human-readable label, e.g. `"⌘⇧P"`. The
-    /// actual key data for `execute` is stored separately in the config once
-    /// P1.3 lands; for now this is a placeholder that renders the label.
-    CustomShortcut(String),
+    /// Holds the structured chord data so `execute` can post the real
+    /// keystroke (macOS: CGEventPost with the encoded modifier flags).
+    /// The `display` field is used by [`Action::label`] so the popover
+    /// shows the user-friendly chord name.
+    CustomShortcut(KeyCombo),
+}
+
+/// A modifier + virtual-key keystroke captured by the P1.3 recorder UI or
+/// hand-authored in `config.toml`.
+///
+/// `modifiers` is a bitmask of [`KeyCombo::MOD_CMD`] etc. so the wire format
+/// is a compact integer, not a string. `key_code` is the macOS virtual key
+/// (kVK_*); other platforms map at `execute` time when they grow real
+/// support.
+///
+/// `display` is purely for rendering — e.g. `"⌘⇧P"`. Callers regenerate it
+/// from the captured chord; we keep it in the struct so older configs
+/// continue to render the same label without re-deriving on every load.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct KeyCombo {
+    /// Bitmask of [`Self::MOD_CMD`] etc.
+    pub modifiers: u8,
+    /// macOS virtual key code (`kVK_*`). 0 means "no key" — useful for
+    /// modifier-only placeholders that the recorder UI rejects.
+    pub key_code: u16,
+    /// Pre-rendered chord label, e.g. `"⌘⇧P"`. Empty falls through to a
+    /// generated label at runtime.
+    #[serde(default)]
+    pub display: String,
+}
+
+impl KeyCombo {
+    pub const MOD_CMD: u8 = 1 << 0;
+    pub const MOD_SHIFT: u8 = 1 << 1;
+    pub const MOD_CTRL: u8 = 1 << 2;
+    pub const MOD_OPTION: u8 = 1 << 3;
+
+    /// Build the human-readable label from the modifier bitmask + key code.
+    /// Falls back to `"⌘key 0xNN"` when the key code isn't one of the
+    /// commonly-recognised letters; the recorder UI usually overrides this
+    /// with its own derivation.
+    #[must_use]
+    pub fn rendered_label(&self) -> String {
+        if !self.display.is_empty() {
+            return self.display.clone();
+        }
+        let mut out = String::new();
+        if self.modifiers & Self::MOD_CTRL != 0 {
+            out.push('⌃');
+        }
+        if self.modifiers & Self::MOD_OPTION != 0 {
+            out.push('⌥');
+        }
+        if self.modifiers & Self::MOD_SHIFT != 0 {
+            out.push('⇧');
+        }
+        if self.modifiers & Self::MOD_CMD != 0 {
+            out.push('⌘');
+        }
+        match self.key_code {
+            0x00 => out.push('A'),
+            0x01 => out.push('S'),
+            0x02 => out.push('D'),
+            0x03 => out.push('F'),
+            0x06 => out.push('Z'),
+            0x07 => out.push('X'),
+            0x08 => out.push('C'),
+            0x09 => out.push('V'),
+            0x0B => out.push('B'),
+            0x0C => out.push('Q'),
+            0x0D => out.push('W'),
+            0x0E => out.push('E'),
+            0x0F => out.push('R'),
+            0x10 => out.push('Y'),
+            0x11 => out.push('T'),
+            0x20 => out.push('U'),
+            0x22 => out.push('I'),
+            0x1F => out.push('O'),
+            0x23 => out.push('P'),
+            _ => {
+                use std::fmt::Write as _;
+                let _ = write!(out, "key 0x{:02X}", self.key_code);
+            }
+        }
+        out
+    }
 }
 
 impl Action {
@@ -267,7 +349,7 @@ impl Action {
             Action::ScrollDown => "Scroll Down".into(),
             Action::HorizontalScrollLeft => "Scroll Left".into(),
             Action::HorizontalScrollRight => "Scroll Right".into(),
-            Action::CustomShortcut(s) => s.clone(),
+            Action::CustomShortcut(combo) => combo.rendered_label(),
         }
     }
 
@@ -470,11 +552,32 @@ impl Action {
             | Action::HorizontalScrollLeft
             | Action::HorizontalScrollRight => macos::post_scroll(self),
             // ── Custom ────────────────────────────────────────────────────────
-            Action::CustomShortcut(s) => {
-                tracing::warn!(
-                    chord = s.as_str(),
-                    "CustomShortcut::execute not yet implemented (P1.3)"
-                );
+            Action::CustomShortcut(combo) => {
+                // P1.3: post the recorded chord. `key_code == 0` is the
+                // "modifier-only placeholder" the recorder UI rejects;
+                // skip it here too so a malformed config doesn't fire
+                // bare modifier presses.
+                if combo.key_code == 0 {
+                    tracing::warn!(
+                        chord = %combo.rendered_label(),
+                        "CustomShortcut with no key code — press ignored"
+                    );
+                    return;
+                }
+                let mut flags = CGEventFlags::CGEventFlagNull;
+                if combo.modifiers & KeyCombo::MOD_CMD != 0 {
+                    flags |= CGEventFlags::CGEventFlagCommand;
+                }
+                if combo.modifiers & KeyCombo::MOD_SHIFT != 0 {
+                    flags |= CGEventFlags::CGEventFlagShift;
+                }
+                if combo.modifiers & KeyCombo::MOD_CTRL != 0 {
+                    flags |= CGEventFlags::CGEventFlagControl;
+                }
+                if combo.modifiers & KeyCombo::MOD_OPTION != 0 {
+                    flags |= CGEventFlags::CGEventFlagAlternate;
+                }
+                macos::post_key(combo.key_code, flags);
             }
         }
     }
@@ -656,8 +759,32 @@ mod tests {
 
     #[test]
     fn custom_shortcut_roundtrips_toml() {
-        let action = Action::CustomShortcut("⌘⇧P".into());
+        let action = Action::CustomShortcut(KeyCombo {
+            modifiers: KeyCombo::MOD_CMD | KeyCombo::MOD_SHIFT,
+            key_code: 0x23, // kVK_ANSI_P
+            display: "⌘⇧P".into(),
+        });
         assert_eq!(roundtrip(&action), action);
+    }
+
+    #[test]
+    fn key_combo_rendered_label_uses_display_when_set() {
+        let combo = KeyCombo {
+            modifiers: 0,
+            key_code: 0,
+            display: "preset".into(),
+        };
+        assert_eq!(combo.rendered_label(), "preset");
+    }
+
+    #[test]
+    fn key_combo_rendered_label_falls_back_to_modifiers_plus_key() {
+        let combo = KeyCombo {
+            modifiers: KeyCombo::MOD_CMD | KeyCombo::MOD_SHIFT,
+            key_code: 0x23, // P
+            display: String::new(),
+        };
+        assert_eq!(combo.rendered_label(), "⇧⌘P");
     }
 
     // ── Category tests ────────────────────────────────────────────────────────

@@ -349,7 +349,11 @@ mod tests {
         cfg.set_binding(
             "2b042",
             ButtonId::DpiToggle,
-            Action::CustomShortcut("Toggle DPI".into()),
+            Action::CustomShortcut(crate::binding::KeyCombo {
+                modifiers: crate::binding::KeyCombo::MOD_CMD,
+                key_code: 0x23, // kVK_ANSI_P
+                display: "⌘P".into(),
+            }),
         );
         cfg.set_binding("4082d", ButtonId::Back, Action::Paste);
 
@@ -360,7 +364,11 @@ mod tests {
         assert_eq!(a.get(&ButtonId::Back), Some(&Action::Copy));
         assert_eq!(
             a.get(&ButtonId::DpiToggle),
-            Some(&Action::CustomShortcut("Toggle DPI".into()))
+            Some(&Action::CustomShortcut(crate::binding::KeyCombo {
+                modifiers: crate::binding::KeyCombo::MOD_CMD,
+                key_code: 0x23,
+                display: "⌘P".into(),
+            }))
         );
 
         let b = parsed.bindings_for("4082d");
