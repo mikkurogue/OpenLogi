@@ -174,10 +174,17 @@ impl Render for MouseModelView {
                     .map(|(idx, hotspot)| hotspot_popover(idx, *hotspot, hovered, active, &view)),
             );
 
+        // z-order, bottom → top:
+        //   1. device PNG (so leader lines don't disappear under the mouse)
+        //   2. leader_canvas (lines over the PNG)
+        //   3. label cards (so a line that grazes the card terminates
+        //      cleanly behind the label instead of striking through it)
+        //   4. hotspots (top, for hit-testing + popovers)
         div()
             .relative()
             .w(px(canvas_w))
             .h(px(canvas_h))
+            .child(breathing_art)
             .child(leader_canvas)
             .children(labels_outer.iter().map(|label| {
                 let binding = bindings
@@ -191,7 +198,6 @@ impl Render for MouseModelView {
                     mouse_w,
                 )
             }))
-            .child(breathing_art)
             .child(hotspots_layer)
     }
 }
