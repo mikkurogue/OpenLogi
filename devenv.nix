@@ -81,12 +81,19 @@
           export CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=/usr/bin/cc
           cargo install cargo-bundle --locked
         fi
+        bash scripts/macos-icns.sh
         cargo run -p openlogi-cli --release -- assets sync
         cd crates/openlogi-gui
         cargo bundle --release
         echo
         echo "Bundle ready: target/release/bundle/osx/OpenLogi.app"
       '';
+    };
+    "openlogi:dmg" = {
+      description = "Build OpenLogi.app (icon + assets) and wrap it in a DMG.";
+      # Full packaging: icon → assets → .app → optional codesign → .dmg.
+      # Set OPENLOGI_SIGN_IDENTITY to a Developer ID to sign for release.
+      exec = "bash scripts/package-macos.sh";
     };
   };
 }

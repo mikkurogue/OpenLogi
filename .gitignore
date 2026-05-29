@@ -35,3 +35,10 @@ devenv.local.yaml
 # Bundle-time asset payload — fetched fresh from assets.openlogi.org by
 # scripts/sync_bundle_assets.py before `cargo bundle`, not checked in.
 /crates/openlogi-gui/assets/
+
+# Generated app icon — built from design/icon/openlogi.svg by
+# scripts/macos-icns.sh at bundle time, not checked in.
+/crates/openlogi-gui/icon/
+
+# Packaging output.
+*.dmg
